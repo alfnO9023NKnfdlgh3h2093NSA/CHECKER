@@ -1,0 +1,207 @@
+local identity = {}
+index = 1
+param = 1
+
+identity.splitt = function(str, ptr)
+    if not ptr then 
+        ptr = "%s"
+    end
+    local tbl = {}
+    for string in string.gmatch(str, ptr) do
+        table.insert(tbl, string) 
+    end
+    return tbl
+end
+
+identity.writeFile = function(text)
+    local file = io.open("information.txt","a")
+    file:write(text.."\n")
+    file:close()
+end
+
+identity.ready = function(id)
+    local count = 0
+    for _, tile in pairs(getTiles()) do
+        if tile.fg == id and tile.ready then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+identity.unready = function(id)
+    local count = 0
+    for _, tile in pairs(getTiles()) do
+        if tile.fg == id and not tile.ready then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+identity.fire = function()
+    local count = 0
+    for i, tile in pairs(getTiles()) do
+        if getTile(tile.x,tile.y).extra == 16 then
+            count = count + 1
+        end
+    end
+    return count 
+end
+
+identity.scanTile = function(id)
+    local count = 0
+    for _, tile in pairs(getTiles()) do
+        if tile.fg == id then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+identity.itemFloat = function(id)
+	local count = 0
+	for _, obj in pairs(getObjects()) do
+		if obj.id == id then
+			count = count + obj.count
+		end
+	end
+	return count
+end
+
+identity.main = function()
+    for i = param, #setting.botList do
+        thread = identity.splitt(setting.botList[i],"([^"..setting.symbol.."]+)")[1]
+        threading = identity.splitt(setting.botList[i],"([^"..setting.symbol.."]+)")[2]
+        addBot(thread,threading)
+        sleep(setting.delay)
+        if getBot().status ~= "online" then
+            while getBot().status ~= "online" do
+                connect()
+                sleep(10000)
+                if getBot().status == "suspended" or getBot().status == "banned" or getBot().status == "maintenance" then
+                    identity.writeFile("[ "..getBot().name.." ] status : "..getBot().status.."")
+                    sleep(1000)
+                    removeBot(getBot().name)
+                    sleep(setting.delay)
+                    param = param + 1
+                    break
+                end
+            end
+        end
+        if getBot().status == "online" then
+            identity.writeFile("[ "..getBot().name.." ] status : "..getBot().status..", level : "..getBot().level.."")
+            sleep(1000)
+            removeBot(getBot().name)
+            sleep(setting.delay)
+            param = param + 1
+        end
+    end
+end
+
+identity.warp = function(world,door)
+    name = world
+    if door ~= "" then
+        name = name .. "|" ..door
+    end
+    if getBot().world ~= string.upper(world) then
+        addHook("onvariant","nuked",function (varlist)
+            if varlist[0] == "OnConsoleMessage" then
+                if string.find(varlist[1],"inaccessible.") then
+                    nuked = true
+                end
+            end
+        end)
+        local join = 0
+        while getBot().world ~= string.upper(world) and not nuked do
+            sendPacket("action|join_request\nname|"..name.."\ninvitedWorld|0",3)
+            sleep(setting.farmlist.delaywarp)
+        end
+        removeHooks()
+        sleep(2000)
+    end
+    if getBot().world == string.upper(world) then
+        if door ~= "" then
+            local stuck = 0
+            while getTile(math.floor(getBot().x / 32),math.floor(getBot().y / 32)).fg == 6 and not wrong do
+                sendPacket("action|join_request\nname|"..name.."\ninvitedWorld|0",3)
+                sleep(setting.farmlist.delaywarp)
+                stuck = stuck + 1
+                if stuck == 5 then
+                    wrong = true
+                end
+            end
+        end
+    end
+end
+
+identity.reconnect = function(world,id,x,y)
+    if getBot().status ~= "online" then
+        while getBot().status ~= "online" do
+            connect()
+            sleep(setting.farmlist.delaywarp)
+            if getBot().status == "suspended" or getBot().status == "banned" or getBot().status == "maintenance" then
+                error()
+            end
+        end
+        local counts = 0
+        while getBot().world ~= world:upper() do
+            sendPacket("action|join_request\nname|"..world:upper().."\ninvitedWorld|0",3)
+            sleep(setting.farmlist.delaywarp)
+            if getBot().world ~= world:upper() then 
+                counts = counts + 1
+                if counts > 5 then
+                    error()
+                end
+            end
+        end
+        if id ~= "" then
+            local stuckk = 0
+            while getTile(math.floor(getBot().x / 32),math.floor(getBot().y / 32)).fg == 6 do
+                sendPacket("action|join_request\nname|" ..world:upper().."|"..id:upper().."\ninvitedWorld|0", 3)
+                sleep(setting.farmlist.delaywarp)
+                if stuckk > 3 then
+                    error()
+                end
+            end
+        end
+        if x and y then
+            while math.floor(getBot().x / 32) ~= x or math.floor(getBot().y / 32) ~= y do
+                findPath(x,y)
+                sleep(150)
+            end
+        end
+    end
+end
+
+if handler.server == "BizzantiuM" and handler.author == "akbarsht" then
+    if setting.type == "farm" then
+        for i, worlds in ipairs(setting.farmlist.world) do
+            identity.warp(worlds,setting.farmlist.door)
+            sleep(250)
+            if not nuked then
+                if not wrong then
+                    identity.reconnect(worlds,setting.farmlist.door)
+                    sleep(250)
+                    identity.writeFile("World : "..worlds.."\nREADY : x"..identity.ready(setting.block + 1).."\nUNREADY : x"..identity.unready(setting.block + 1).."\nBLOCK : x"..identity.itemFloat(setting.block).."\nSEED : x"..identity.itemFloat(setting.block + 1).."\nFOSSIL : x"..identity.scanTile(3918).."\nFIRE : x"..identity.fire().."\nTOXIC : x"..identity.scanTile(778).."\nGEMS : x"..identity.itemFloat(112).."\n==================")
+                    sleep(1000)
+                else
+                    wrong = false
+                    sleep(5000)
+                    identity.writeFile("World : "..worlds.."\nREADY : WRONG DOOR\nUNREADY : WRONG DOOR\nBLOCK : WRONG DOOR\nSEED : WRONG DOOR\nFOSSIL : WRONG DOOR\nFIRE : WRONG DOOR\nTOXIC : WRONG DOOR\nGEMS : WRONG DOOR\n==================")
+                    sleep(1000)
+                end
+            else
+                nuked = false
+                sleep(5000)
+                identity.writeFile("World : "..worlds.."\nREADY : NUKED\nUNREADY : NUKED\nBLOCK : NUKED\nSEED : NUKED\nFOSSIL : NUKED\nFIRE : NUKED\nTOXIC : NUKED\nGEMS : NUKED\n==================")
+                sleep(1000)
+            end
+        end
+        print("Already done recheking world, script terminated")
+        sleep(100)
+    elseif setting.type == "bot" then
+        identity.main()
+    end
+end
+        
